@@ -8,7 +8,8 @@ const PAL = {
     BLUE: 0x1F56FF,
     PURPLE: 0xB300FF,
     MAGENTA: 0xFF2BD6,
-    GREEN: 0x32FF6A,
+    GREEN: 0x008000,
+    LTGREEN: 0x32FF6A,
     DKGREEN: 0x0D6B2E,
     ORANGE: 0xFF8A1F,
     YELLOW: 0xFFE35A,
@@ -47,29 +48,32 @@ export class GameScene extends Phaser.Scene {
         this.bomberBombMax = 1850;
 
         // Apple II palette background/ground
-        this.add.rectangle(W / 2, H / 2, W, H, PAL.DKBLUE).setDepth(-50);
+        this.add.rectangle(W / 2, H / 2, W, H, PAL.BLUE).setDepth(-50);
 
         this.groundY = H - 52;
-        this.ground = this.add.rectangle(W / 2, this.groundY + 26, W, 52, PAL.DKGREEN).setAlpha(0.95);
+        this.ground = this.add.rectangle(W / 2, this.groundY + 26, W, 52, PAL.GREEN).setAlpha(0.95);
         this.physics.add.existing(this.ground, true);
 
         // “Horizon” strip (artifact-y)
-        this.add.rectangle(W / 2, this.groundY - 2, W, 6, PAL.PURPLE).setAlpha(0.85);
+        this.add.rectangle(W / 2, this.groundY - 2, W, 6, PAL.DKGREEN).setAlpha(0.85);
 
         // Turret/base
         this.baseX = W / 2;
         this.barrel = this.add.rectangle(this.baseX, this.groundY - 24, 58, 10, PAL.WHITE).setOrigin(0.12, 0.5).setAlpha(0.95);
-        this.turretBase = this.add.rectangle(this.baseX, this.groundY - 10, 74, 34, PAL.GREEN).setAlpha(0.95);
+        this.turretBase2 = this.add.circle(this.baseX, this.groundY - 20, 20, PAL.ORANGE);
+        this.turretBase = this.add.rectangle(this.baseX, this.groundY - 10, 74, 34, PAL.WHITE);
 
         // Groups
         this.bullets = this.physics.add.group();
-        this.air = this.physics.add.group();
+        this.helis = this.physics.add.group();
+        this.bombers = this.physics.add.group();
         this.troops = this.physics.add.group();
         this.bombs = this.physics.add.group();
         this.grounders = this.physics.add.group();
 
         // Collisions
-        this.physics.add.overlap(this.bullets, this.air, this.hitAircraft, null, this);
+        this.physics.add.overlap(this.bullets, this.helis, this.hitAircraft, null, this);
+        this.physics.add.overlap(this.bullets, this.bombers, this.hitAircraft, null, this);
         this.physics.add.overlap(this.bullets, this.troops, this.hitTroop, null, this);
         this.physics.add.overlap(this.bullets, this.bombs, this.hitBomb, null, this);
 
@@ -162,8 +166,9 @@ export class GameScene extends Phaser.Scene {
         this.bullets.children.iterate(b => { if (b && b.active && (b.y > H + 60)) b.destroy(); });
         this.troops.children.iterate(t => { if (t && t.active && (t.y > H + 80)) t.destroy(); });
         this.bombs.children.iterate(b => { if (b && b.active && (b.y > H + 80)) b.destroy(); });
-        this.air.children.iterate(a => { if (a && a.active && (a.x < -160 || a.x > W + 160)) a.destroy(); });
-        this.bullets.children.entries.forEach(bullet => {
+        this.helis.children.iterate(a => { if (a && a.active && (a.x < -160 || a.x > W + 160)) a.destroy(); });
+        this.bombers.children.iterate(a => { if (a && a.active && (a.x < -160 || a.x > W + 160)) a.destroy(); });
+        this.bullets.getChildren().forEach(bullet => {
             if (bullet.y < 0 || bullet.x < 0 || bullet.x > 800) {
                 bullet.destroy();
             }
@@ -223,6 +228,7 @@ export class GameScene extends Phaser.Scene {
 
         const bullet = this.add.circle(tipX, tipY, 4, PAL.YELLOW).setAlpha(0.95);
         this.physics.add.existing(bullet);
+        this.bullets.add(bullet);
         bullet.body.setCircle(4);
         bullet.body.setBounce(0.25);
         bullet.body.outOfBoundsKill = true;
@@ -252,15 +258,16 @@ export class GameScene extends Phaser.Scene {
     spawnHeli(time) {
         const fromLeft = Math.random() < 0.5;
         const y = Phaser.Math.Between(82, 205);
-        const x = fromLeft ? -120 : W + 120;
+        const x = fromLeft ? 20 : W - 20;
 
-        const body = this.add.rectangle(0, 0, 64, 18, PAL.BLUE).setAlpha(0.95);
+        const body = this.add.rectangle(0, 0, 64, 18, PAL.DKBLUE).setAlpha(0.95);
         const tail = this.add.rectangle(fromLeft ? -30 : 30, 0, 26, 6, PAL.PURPLE).setAlpha(0.95);
         const rotor = this.add.rectangle(0, -13, 70, 4, PAL.WHITE).setAlpha(0.85);
 
         const heli = this.add.container(x, y, [tail, body, rotor]);
         heli.setSize(84, 34);
         this.physics.add.existing(heli);
+        this.helis.add(heli);
         heli.body.setAllowGravity(false);
 
         const baseSpeed = 110 + this.wave * 10;
@@ -283,7 +290,6 @@ export class GameScene extends Phaser.Scene {
         };
         tick();
 
-        this.air.add(heli);
     }
 
     spawnBomber(time) {
@@ -298,6 +304,7 @@ export class GameScene extends Phaser.Scene {
         const bomber = this.add.container(x, y, [wing, fus, tail]);
         bomber.setSize(92, 34);
         this.physics.add.existing(bomber);
+        this.bombers.add(bomber);
         bomber.body.setAllowGravity(false);
 
         const baseSpeed = 92 + this.wave * 7;
@@ -318,7 +325,6 @@ export class GameScene extends Phaser.Scene {
         };
         tick();
 
-        this.air.add(bomber);
     }
 
     spawnJet(time) {
@@ -333,6 +339,7 @@ export class GameScene extends Phaser.Scene {
         const jet = this.add.container(x, y, [fus, fin, nose]);
         jet.setSize(92, 26);
         this.physics.add.existing(jet);
+        this.jets.add(jet);
         jet.body.setAllowGravity(false);
 
         const baseSpeed = 220 + this.wave * 14;
@@ -341,10 +348,8 @@ export class GameScene extends Phaser.Scene {
         jet.kind = "jet";
         jet.hp = 1;
 
-        this.air.add(jet);
     }
 
-    // ---------- parachutes ----------
     spawnParatrooper(x, y, airVx) {
         // Container: canopy + lines + body
         const canopy = this.add.arc(0, -10, 12, 200, -20, false, PAL.WHITE).setAlpha(0.9);
