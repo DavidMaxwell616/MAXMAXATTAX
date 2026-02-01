@@ -25,7 +25,10 @@ export class GameScene extends Phaser.Scene {
 
         this.load.image('base', 'assets/images/base.png');
         this.load.image('parachute', 'assets/images/parachute.png');
-        this.load.image('paratrooper', 'assets/images/paratrooper.png');
+        this.load.spritesheet('paratrooper', 'assets/images/paratrooper.png', {
+            frameWidth: 5,
+            frameHeight: 7
+        });
     }
     create() {
 
@@ -83,6 +86,7 @@ export class GameScene extends Phaser.Scene {
         /* UI */
         this.score = 0;
         this.ui = this.add.text(12, 12, "", { font: "16px monospace", fill: "#dbe8ff" });
+        this.ui2 = this.add.text(W / 2 - 50, H * .92, "", { font: "32px monospace", fill: "#dbe8ff" });
 
         /* spawn timing (Atari-ish) */
         this.spawnRate = 2200;
@@ -255,40 +259,41 @@ export class GameScene extends Phaser.Scene {
 
     spawnParatrooper(x, y, vx) {
         // Trooper body (physics)
-        const body = this.add.circle(x, y, 6, PAL.MAGENTA);
-        this.physics.add.existing(body);
-        this.troops.add(body);
-        body.body.setCircle(6);
-        body.body.setCollideWorldBounds(true);
-        body.body.setBounce(0.08);
-
+        const trooper = this.physics.add.sprite(x, y, 'paratrooper');
+        this.physics.add.existing(trooper);
+        this.troops.add(trooper);
+        //        trooper.body.setCircle(6);
+        trooper.body.setCollideWorldBounds(true);
+        trooper.body.setBounce(0.08);
+        trooper.setScale(3);
         // Initial drift + brief freefall
-        body.body.setVelocityX(vx * 0.45 + Phaser.Math.Between(-20, 20));
-        body.body.setVelocityY(Phaser.Math.Between(-6, 24));
+        trooper.body.setVelocityX(vx * 0.45 + Phaser.Math.Between(-20, 20));
+        trooper.body.setVelocityY(Phaser.Math.Between(-6, 24));
 
         // State
-        body.deployed = false;
-        body.chute = null;
+        trooper.deployed = false;
+        trooper.chute = null;
 
         // Deploy parachute after delay: slow descent
         this.time.delayedCall(200, () => {
-            if (!body.active) return;
+            if (!trooper.active) return;
 
-            body.deployed = true;
+            trooper.deployed = true;
 
             // Create shootable canopy as its own physics target
-            const chute = this.add.arc(body.x, body.y - 16, 12, 200, -20, false, PAL.WHITE).setAlpha(0.9);
-            this.physics.add.existing(chute);
+            const chute = this.physics.add.sprite(trooper.x, trooper.y - 16, 'parachute');
+            chute.setScale(3);
+            this.chutes.add(chute);
             chute.body.setAllowGravity(false);
             chute.body.setImmovable(true);
 
             // Link them
-            chute.trooper = body;
-            body.chute = chute;
+            //chute.body = trooper;
+            trooper.chute = chute;
 
             // Slow descent (reduced gravity + terminal velocity)
-            body.body.setGravityY(55);
-            body.body.setMaxVelocity(220, 120);
+            trooper.body.setGravityY(55);
+            trooper.body.setMaxVelocity(220, 120);
 
             // Add mild sway
             this.tweens.add({
@@ -300,13 +305,13 @@ export class GameScene extends Phaser.Scene {
                 ease: "Sine.easeInOut"
             });
 
-            this.chutes.add(chute);
         });
 
         // Keep a reference for landing logic (we land the BODY)
     }
 
     hitHeli(b, heli) {
+        this.explode(heli.x, heli.y);
         b.destroy();
         heli.hp--;
         if (heli.hp <= 0) {
@@ -319,15 +324,29 @@ export class GameScene extends Phaser.Scene {
     hitTroop(bullet, troop) {
         bullet.destroy();
 
+        this.explode(troop.x, troop.y);
         // If this trooper has a chute, remove it too
         if (troop.chute && troop.chute.active) troop.chute.destroy();
-
         troop.destroy();
         this.score += 80;
         this.updateUI();
     }
 
-
+    explode(x, y) {
+        // Cheap particle-ish burst
+        for (let i = 0; i < 10; i++) {
+            const keys = Object.keys(PAL);
+            const randomIndex = Phaser.Math.Between(0, keys.length - 1);
+            const color = PAL[keys[randomIndex]];
+            const p = this.add.rectangle(x, y, 4, 4, color).setAlpha(0.95);
+            this.physics.add.existing(p);
+            p.body.setAllowGravity(true);
+            p.body.setVelocity(Phaser.Math.Between(-120, 120), Phaser.Math.Between(-160, 140));
+            p.body.setBounce(0.45);
+            p.body.setCollideWorldBounds(true);
+            this.time.delayedCall(950 + i * 20, () => p.destroy());
+        }
+    }
     troopLanded(troop) {
         // record landing spot, remove falling troop
         const x = troop.x;
@@ -378,6 +397,9 @@ export class GameScene extends Phaser.Scene {
             `BASE  ${"█".repeat(this.baseHP)}\n` +
             `LANDED ${waiting} / ${this.attackThreshold}  (${need} to attack)`
         );
+        this.ui2.setText('000000'
+        );
+
     }
 
 
