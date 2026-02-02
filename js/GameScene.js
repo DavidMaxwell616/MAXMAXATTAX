@@ -7,6 +7,7 @@ const PAL = {
     DKBLUE: 0x0A0B2E,
     BLUE: 0x1F56FF,
     PURPLE: 0xB300FF,
+    RED: 0xff0000,
     GREEN: 0x32FF6A,
     DKGREEN: 0x0D6B2E,
     YELLOW: 0xFFE35A,
@@ -43,7 +44,7 @@ export class GameScene extends Phaser.Scene {
         this.physics.world.setBounds(0, 0, W, H);
 
         // /* background */
-        // this.add.rectangle(W / 2, H / 2, W, H, PAL.BLUE);
+        //this.add.rectangle(W / 2, H / 2, W, H, PAL.BLUE);
 
         // /* ground */
         this.groundY = H - 32;
@@ -86,7 +87,7 @@ export class GameScene extends Phaser.Scene {
         /* UI */
         this.score = 0;
         this.ui = this.add.text(12, 12, "", { font: "16px monospace", fill: "#dbe8ff" });
-        this.ui2 = this.add.text(W / 2 - 50, H * .92, "", { font: "32px monospace", fill: "#dbe8ff" });
+        this.ui2 = this.add.text(W / 2 - 50, H * .92, "", { font: "26px monospace", fill: "#dbe8ff" });
 
         /* spawn timing (Atari-ish) */
         this.spawnRate = 2200;
@@ -284,11 +285,9 @@ export class GameScene extends Phaser.Scene {
             const chute = this.physics.add.sprite(trooper.x, trooper.y - 16, 'parachute');
             chute.setScale(3);
             this.chutes.add(chute);
-            chute.body.setAllowGravity(false);
-            chute.body.setImmovable(true);
 
             // Link them
-            //chute.body = trooper;
+            chute.trooper = trooper;
             trooper.chute = chute;
 
             // Slow descent (reduced gravity + terminal velocity)
@@ -334,14 +333,15 @@ export class GameScene extends Phaser.Scene {
 
     explode(x, y) {
         // Cheap particle-ish burst
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < 20; i++) {
             const keys = Object.keys(PAL);
             const randomIndex = Phaser.Math.Between(0, keys.length - 1);
             const color = PAL[keys[randomIndex]];
             const p = this.add.rectangle(x, y, 4, 4, color).setAlpha(0.95);
             this.physics.add.existing(p);
             p.body.setAllowGravity(true);
-            p.body.setVelocity(Phaser.Math.Between(-120, 120), Phaser.Math.Between(-160, 140));
+            p.body.setVelocity(Phaser.Math.Between(-120, 120), Phaser.Math.Between(-130, 160));
+            p.body.setGravityY(200);
             p.body.setBounce(0.45);
             p.body.setCollideWorldBounds(true);
             this.time.delayedCall(950 + i * 20, () => p.destroy());
@@ -397,7 +397,7 @@ export class GameScene extends Phaser.Scene {
             `BASE  ${"█".repeat(this.baseHP)}\n` +
             `LANDED ${waiting} / ${this.attackThreshold}  (${need} to attack)`
         );
-        this.ui2.setText('000000'
+        this.ui2.setText('0000000'
         );
 
     }
