@@ -69,7 +69,7 @@ export class GameScene extends Phaser.Scene {
         this.chutes = this.physics.add.group();     // shootable canopy targets
         this.bombs = this.physics.add.group();      // bomber bombs
         this.grounders = this.physics.add.group();  // ground attackers
-
+        this.particles = this.physics.add.group();
         // collisions
         this.physics.add.overlap(this.bullets, this.air, this.hitAircraft, null, this);
         this.physics.add.overlap(this.bullets, this.troops, this.hitTroop, null, this);
@@ -83,7 +83,6 @@ export class GameScene extends Phaser.Scene {
         // input
         this.keys = this.input.keyboard.addKeys("SPACE,SHIFT,R");
         this.input.on("pointerdown", () => this.fire(false));
-        this.fireCooldown = 0;
         /* landed -> attack rule */
         this.landed = [];               // store {x, marker} for landed troops waiting
         this.attackThreshold = 10;      // when 10 have landed, they attack
@@ -152,6 +151,7 @@ export class GameScene extends Phaser.Scene {
         this.air.children.iterate(a => { if (a && a.active && (a.x < -160 || a.x > W + 160)) a.destroy(); });
         this.troops.children.iterate(t => { if (t && t.active && t.y > H + 90) t.destroy(); });      // keep deployed parachutes attached to troopers
         this.bombs.children.iterate(b => { if (b && b.active && b.y > H + 90) b.destroy(); });
+        this.particles.children.iterate(b => { if (b && b.y > this.groundY) b.destroy(); });
 
         // attackers march & hit base
         this.grounders.children.iterate(a => {
@@ -182,10 +182,10 @@ export class GameScene extends Phaser.Scene {
 
     // ---------- firing ----------
     fire(rapid) {
-        const now = this.time.now;
-        const cd = rapid ? 70 : 120;
-        if (now < this.fireCooldown) return;
-        this.fireCooldown = now + cd;
+
+        if (this.score > 0) {
+            this.score--;
+        }
 
         const ang = this.barrel.rotation;
         const x = this.barrel.x + Math.cos(ang) * 48;
@@ -374,6 +374,7 @@ export class GameScene extends Phaser.Scene {
 
     bombHitGround(bomb) {
         // explode + base damage if close
+        this.explode(bomb.x, bomb.y, 20);
         const x = bomb.x;
         bomb.destroy();
 
@@ -414,6 +415,7 @@ export class GameScene extends Phaser.Scene {
             const color = PAL[keys[randomIndex]];
             const p = this.add.rectangle(x, y, 4, 4, color).setAlpha(0.95);
             this.physics.add.existing(p);
+            this.particles.add(p);
             p.body.setAllowGravity(true);
             p.body.setVelocity(Phaser.Math.Between(-120, 120), Phaser.Math.Between(-130, 160));
             p.body.setGravityY(200);
@@ -426,10 +428,6 @@ export class GameScene extends Phaser.Scene {
         // record landing spot, remove falling troop
         const x = troop.x;
         troop.destroy();
-
-        // create a waiting marker on the ground (they’re “gathering”)
-        const marker = this.add.rectangle(x, this.groundY - 10, 12, 12, PAL.MAGENTA).setAlpha(0.95);
-        this.landed.push({ x, marker });
 
         // once 10 have landed, they attack (spawn marching grounders)
         if (!this.attackInProgress && this.landed.length >= this.attackThreshold) {
