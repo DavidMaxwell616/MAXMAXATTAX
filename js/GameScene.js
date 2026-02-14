@@ -65,26 +65,25 @@ export class GameScene extends Phaser.Scene {
         // groups
         this.bullets = this.physics.add.group();
         this.air = this.physics.add.group();
-        this.troops = this.physics.add.group();     // trooper bodies (circles)
+        this.troopers = this.physics.add.group();     // trooper bodies (circles)
         this.chutes = this.physics.add.group();     // shootable canopy targets
         this.bombs = this.physics.add.group();      // bomber bombs
         this.grounders = this.physics.add.group();  // ground attackers
         this.particles = this.physics.add.group();
         // collisions
         this.physics.add.overlap(this.bullets, this.air, this.hitAircraft, null, this);
-        this.physics.add.overlap(this.bullets, this.troops, this.hitTroop, null, this);
+        this.physics.add.overlap(this.bullets, this.troopers, this.hitTroop, null, this);
         this.physics.add.overlap(this.bullets, this.chutes, this.hitChute, null, this);
         this.physics.add.overlap(this.bullets, this.bombs, this.hitBomb, null, this);
         this.physics.add.overlap(this.bullets, this.grounders, this.hitGrounder, null, this);
 
-        this.physics.add.collider(this.troops, this.ground, this.troopLanded, null, this);
+        this.physics.add.collider(this.troopers, this.ground, this.trooperLanded, null, this);
         this.physics.add.collider(this.bombs, this.ground, this.bombHitGround, null, this);
 
         // input
         this.keys = this.input.keyboard.addKeys("SPACE,SHIFT,R");
-        this.input.on("pointerdown", () => this.fire(false));
         /* landed -> attack rule */
-        this.landed = [];               // store {x, marker} for landed troops waiting
+        this.landed = 0;               // store {x, marker} for landed troopers waiting
         this.attackThreshold = 10;      // when 10 have landed, they attack
         this.attackInProgress = false;  // prevents retrigger while attackers alive
 
@@ -92,7 +91,8 @@ export class GameScene extends Phaser.Scene {
         this.score = 0;
         this.ui = this.add.text(12, 12, "", { font: "16px monospace", fill: "#dbe8ff" });
         this.ui2 = this.add.text(W / 2 - 50, H * .92, "", { font: "26px monospace", fill: "#dbe8ff" });
-
+        this.nextFireTime = 0;
+        this.fireRate = 100; // ms between shots
         // spawn timing (Atari-ish cadence)
         this.spawnRate = 2200;
         this.nextSpawn = 0;
@@ -106,7 +106,7 @@ export class GameScene extends Phaser.Scene {
         this.bombMax = 1500;
 
         // landed -> attack rule
-        this.landed = [];
+        this.landed = 0;
         this.attackThreshold = 10;
         this.attackInProgress = false;
 
@@ -137,9 +137,12 @@ export class GameScene extends Phaser.Scene {
         this.barrel.rotation = ang;
 
         // fire
-        if (Phaser.Input.Keyboard.JustDown(this.keys.SPACE)) this.fire(false);
-        if (this.keys.SHIFT.isDown && this.keys.SPACE.isDown) this.fire(true);
-
+        if (Phaser.Input.Keyboard.JustDown(this.keys.SPACE)) this.fire();
+        if (this.keys.SHIFT.isDown && this.keys.SPACE.isDown) this.fire();
+        if (this.input.activePointer.isDown && time > this.nextFireTime) {
+            this.fire();
+            this.nextFireTime = time + this.fireRate;
+        }
         // spawn aircraft (heli + bomber)
         if (time > this.nextSpawn) {
             this.spawnAircraft(time);
@@ -149,7 +152,7 @@ export class GameScene extends Phaser.Scene {
         // cleanup
         this.bullets.children.iterate(b => { if (b && b.active && b.y > H + 60) b.destroy(); });
         this.air.children.iterate(a => { if (a && a.active && (a.x < -160 || a.x > W + 160)) a.destroy(); });
-        this.troops.children.iterate(t => { if (t && t.active && t.y > H + 90) t.destroy(); });      // keep deployed parachutes attached to troopers
+        this.troopers.children.iterate(t => { if (t && t.active && t.y > H + 90) t.destroy(); });      // keep deployed parachutes attached to troopers
         this.bombs.children.iterate(b => { if (b && b.active && b.y > H + 90) b.destroy(); });
         this.particles.children.iterate(b => { if (b && b.y > this.groundY) b.destroy(); });
 
@@ -181,7 +184,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     // ---------- firing ----------
-    fire(rapid) {
+    fire() {
 
         if (this.score > 0) {
             this.score--;
@@ -290,10 +293,11 @@ export class GameScene extends Phaser.Scene {
         // physics body
         const trooper = this.physics.add.sprite(x, y, 'paratrooper');
         this.physics.add.existing(trooper);
-        this.troops.add(trooper);
+        this.troopers.add(trooper);
         //        trooper.body.setCircle(6);
         trooper.body.setCollideWorldBounds(true);
         trooper.body.setBounce(0.08);
+        trooper.body.setGravityY(200);
         trooper.setScale(3);
         // Initial drift + brief freefall
         trooper.body.setVelocityX(vx * 0.45 + Phaser.Math.Between(-20, 20));
@@ -304,7 +308,7 @@ export class GameScene extends Phaser.Scene {
         trooper.chute = null;
 
         // Deploy parachute after delay: slow descent
-        this.time.delayedCall(200, () => {
+        this.time.delayedCall(800, () => {
             if (!trooper.active) return;
 
             trooper.deployed = true;
@@ -424,16 +428,13 @@ export class GameScene extends Phaser.Scene {
             this.time.delayedCall(950 + i * 20, () => p.destroy());
         }
     }
-    troopLanded(troop) {
-        // record landing spot, remove falling troop
-        const x = troop.x;
-        troop.destroy();
-
-        // once 10 have landed, they attack (spawn marching grounders)
-        if (!this.attackInProgress && this.landed.length >= this.attackThreshold) {
+    trooperLanded(ground, trooper) {
+        trooper.chute.destroy();
+        trooper.setVelocity(0, 0);
+        this.landed++;
+        if (!this.attackInProgress && this.landed >= this.attackThreshold) {
             this.startAttackWave();
         }
-        if (troop.chute && troop.chute.active) troop.chute.destroy();
 
         this.updateUI();
     }
@@ -441,35 +442,36 @@ export class GameScene extends Phaser.Scene {
         this.attackInProgress = true;
 
         // convert exactly 10 landed markers into attackers
-        const batch = this.landed.splice(0, this.attackThreshold);
+        //const batch = this.landed.splice(0, this.attackThreshold);
 
-        batch.forEach((entry) => {
-            if (entry.marker && entry.marker.active) entry.marker.destroy();
+        //     batch.forEach((entry) => {
 
-            const a = this.add.rectangle(entry.x, this.groundY - 10, 14, 14, PAL.MAGENTA).setAlpha(0.95);
-            this.physics.add.existing(a);
-            a.body.setAllowGravity(false);
-            a.body.setCollideWorldBounds(true);
+        //         const a = this.add.rectangle(entry.x, this.groundY - 10, 14, 14, PAL.MAGENTA).setAlpha(0.95);
+        //         this.physics.add.existing(a);
+        //         a.body.setAllowGravity(false);
+        //         a.body.setCollideWorldBounds(true);
 
-            // slight speed variance
-            a.speed = 22 + Phaser.Math.Between(-3, 3);
+        //         // slight speed variance
+        //         a.speed = 22 + Phaser.Math.Between(-3, 3);
 
-            // small stagger so they don’t overlap perfectly
-            a.x += Phaser.Math.Between(-6, 6);
+        //         // small stagger so they don’t overlap perfectly
+        //         a.x += Phaser.Math.Between(-6, 6);
 
-            this.grounders.add(a);
-        });
+        //         this.grounders.add(a);
+        //     });
     }
 
 
 
     updateUI() {
         const hpBar = "█".repeat(this.baseHP) + "░".repeat(this.baseHPMax - this.baseHP);
-        const waiting = this.landed.length;
+        const waiting = this.landed;
         const need = Math.max(0, this.attackThreshold - waiting);
         this.ui.setText(
-            `LANDED ${waiting}/${this.attackThreshold} (${need} to attack)\n`
+            `BASE  ${"█".repeat(this.baseHP)}\n` +
+            `LANDED ${waiting} / ${this.attackThreshold}  (${need} to attack)`
         );
+
         const zeroPad = (num, places) => String(num).padStart(places, '0')
         this.ui2.setText(zeroPad(this.score, 7));
 
