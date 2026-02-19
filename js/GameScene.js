@@ -4,16 +4,17 @@ import Text from "./Rules.js";
 const W = 960, H = 540;
 /* Apple II-ish palette (approx) */
 const PAL = {
+    BLUE: 0x605BF5,
     BLACK: 0x000000,
-    DKBLUE: 0x0A0B2E,
-    BLUE: 0x1F56FF,
+    DKBLUE: 0x1A0DA3,
+    DKGREEN: 0x0D6B2E,
+    GREEN: 0x32FF6A,
+    MAGENTA: 0xFF2BD6,
+    ORANGE: 0xFF0000,
     PURPLE: 0xB300FF,
     RED: 0xff0000,
-    GREEN: 0x32FF6A,
-    DKGREEN: 0x0D6B2E,
+    WHITE: 0xFFFFFF,
     YELLOW: 0xFFE35A,
-    MAGENTA: 0xFF2BD6,
-    WHITE: 0xFFFFFF
 };
 
 export class GameScene extends Phaser.Scene {
@@ -28,7 +29,6 @@ export class GameScene extends Phaser.Scene {
             frameWidth: 30,
             frameHeight: 11
         });
-        this.load.image('base', 'assets/images/base.png');
         this.load.image('parachute', 'assets/images/parachute.png');
         this.load.spritesheet('paratrooper', 'assets/images/paratrooper.png', {
             frameWidth: 5,
@@ -42,7 +42,11 @@ export class GameScene extends Phaser.Scene {
         gg.fillCircle(4, 4, 4);
         gg.generateTexture("bullet", 8, 8);
         gg.destroy();
-
+        const bb = this.add.graphics();
+        bb.fillStyle(PAL.ORANGE, 1);
+        bb.fillCircle(2, 2, 2);
+        bb.generateTexture("bomb", 8, 8);
+        bb.destroy();
         // physics
         this.physics.world.setBounds(0, 0, W, H);
 
@@ -60,8 +64,10 @@ export class GameScene extends Phaser.Scene {
         this.baseHP = this.baseHPMax;
         this.barrel = this.add.rectangle(this.baseX, this.groundY - 24, 56, 10, PAL.YELLOW)
             .setOrigin(0.12, 0.5);
-        this.base = this.add.image(this.baseX, this.groundY - 10, 'base');
-        this.base.setScale(3);
+        this.turret = this.add.circle(W / 2, this.groundY - 20, 22, PAL.BLUE);
+        this.physics.add.existing(this.turret, true);
+        this.base = this.add.rectangle(W / 2, this.groundY, 120, 42, PAL.DKBLUE);
+        this.physics.add.existing(this.base, true);
         // groups
         this.bullets = this.physics.add.group();
         this.air = this.physics.add.group();
@@ -77,17 +83,17 @@ export class GameScene extends Phaser.Scene {
         this.physics.add.overlap(this.bullets, this.bombs, this.hitBomb, null, this);
         this.physics.add.overlap(this.bullets, this.grounders, this.hitGrounder, null, this);
 
-        this.physics.add.collider(this.troopers, this.ground, this.trooperLanded, null, this);
-        this.physics.add.collider(this.bombs, this.ground, this.bombHitGround, null, this);
+        this.physics.add.overlap(this.troopers, this.ground, this.trooperLanded, null, this);
+        this.physics.add.overlap(this.bombs, this.ground, this.bombHitGround, null, this);
 
         // input
         this.keys = this.input.keyboard.addKeys("SPACE,SHIFT,R");
         /* landed -> attack rule */
-        this.landed = 0;               // store {x, marker} for landed troopers waiting
         this.attackThreshold = 10;      // when 10 have landed, they attack
         this.attackInProgress = false;  // prevents retrigger while attackers alive
 
         // UI
+        this.level = 1;
         this.score = 0;
         this.ui = this.add.text(12, 12, "", { font: "16px monospace", fill: "#dbe8ff" });
         this.ui2 = this.add.text(W / 2 - 50, H * .92, "", { font: "26px monospace", fill: "#dbe8ff" });
@@ -104,11 +110,6 @@ export class GameScene extends Phaser.Scene {
         // bomber bombs
         this.bombMin = 900;
         this.bombMax = 1500;
-
-        // landed -> attack rule
-        this.landed = 0;
-        this.attackThreshold = 10;
-        this.attackInProgress = false;
 
         // FX
         this.fx = new AtariFX(this);
@@ -144,7 +145,7 @@ export class GameScene extends Phaser.Scene {
             this.nextFireTime = time + this.fireRate;
         }
         // spawn aircraft (heli + bomber)
-        if (time > this.nextSpawn) {
+        if (time > this.nextSpawn && !this.attackInProgress) {
             this.spawnAircraft(time);
             this.nextSpawn = time + this.spawnRate;
         }
@@ -156,21 +157,8 @@ export class GameScene extends Phaser.Scene {
         this.bombs.children.iterate(b => { if (b && b.active && b.y > H + 90) b.destroy(); });
         this.particles.children.iterate(b => { if (b && b.y > this.groundY) b.destroy(); });
 
-        // attackers march & hit base
-        this.grounders.children.iterate(a => {
-            if (!a || !a.active) return;
-            const dir = (this.baseX < a.x) ? -1 : 1;
-            a.body.setVelocityX(dir * a.speed);
-            if (Math.abs(a.x - this.baseX) < 30) {
-                a.destroy();
-                this.baseHP = Math.max(0, this.baseHP - 1);
-                this.cameras.main.shake(110, 0.006);
-                this.updateUI();
-                if (this.baseHP <= 0) this.gameOver();
-            }
-        });
 
-        if (this.attackInProgress && this.grounders.countActive(true) === 0) this.attackInProgress = false;
+        //if (this.attackInProgress && this.grounders.countActive(true) === 0) this.attackInProgress = false;
 
         this.chutes.children.iterate(ch => {
             if (!ch || !ch.active) return;
@@ -235,7 +223,7 @@ export class GameScene extends Phaser.Scene {
         const tick = () => {
             if (!heli.active || this.baseHP <= 0) return;
             const now = this.time.now;
-            if (now >= heli.nextDrop) {
+            if (now >= heli.nextDrop && !this.attackInProgress) {
                 this.spawnParatrooper(heli.x + Phaser.Math.Between(-10, 10), heli.y + 18, heli.body.velocity.x);
                 heli.nextDrop = now + Phaser.Math.Between(this.heliDropMin, this.heliDropMax);
             }
@@ -269,7 +257,7 @@ export class GameScene extends Phaser.Scene {
             if (!bomber.active || this.baseHP <= 0) return;
             const now = this.time.now;
             if (now >= bomber.nextBomb) {
-                this.spawnBomb(bomber.x, bomber.y + 18, bomber.body.velocity.x);
+                this.spawnBomb(bomber.x, bomber.y + 28, bomber.body.velocity.x);
                 bomber.nextBomb = now + Phaser.Math.Between(this.bombMin, this.bombMax);
             }
             this.time.delayedCall(120, tick);
@@ -279,13 +267,15 @@ export class GameScene extends Phaser.Scene {
     }
 
     spawnBomb(x, y, vx) {
-        const bomb = this.add.rectangle(x, y, 10, 14, PAL.ORANGE).setAlpha(0.95);
+        const bomb = this.physics.add.image(x, y, "bomb");
         this.bombs.add(bomb);
-        this.physics.add.existing(bomb);
-        bomb.body.setBounce(0.03);
+
         bomb.body.setCollideWorldBounds(true);
-        bomb.body.setVelocityX(vx * 0.18 + Phaser.Math.Between(-8, 8));
-        bomb.body.setVelocityY(Phaser.Math.Between(0, 16));
+        bomb.body.setBounce(0.08);
+        bomb.body.setGravityY(200);
+        bomb.setScale(3);
+        bomb.body.setVelocityX(vx * 0.45 + Phaser.Math.Between(-20, 20));
+        bomb.body.setVelocityY(Phaser.Math.Between(-6, 24));
     }
 
     // ---------- shootable parachutes ----------
@@ -343,7 +333,7 @@ export class GameScene extends Phaser.Scene {
     // ---------- hits ----------
     hitAircraft(bullet, craft) {
         bullet.destroy();
-        this.explode(craft.x, craft.y, 50);
+        this.explode(craft.x, craft.y, 50, 120, 120);
         craft.hp--;
         if (craft.hp <= 0) {
             craft.destroy();
@@ -352,12 +342,12 @@ export class GameScene extends Phaser.Scene {
         }
     }
 
-    hitTroop(bullet, troop) {
+    hitTrooper(bullet, trooper) {
         bullet.destroy();
-        this.explode(troop.x, troop.y, 20);
+        this.explode(trooper.x, trooper.y, 20, 120, 120);
 
-        if (troop.chute && troop.chute.active) troop.chute.destroy();
-        troop.destroy();
+        if (trooper.chute && trooper.chute.active) trooper.chute.destroy();
+        trooper.destroy();
         this.score += 80;
         this.updateUI();
     }
@@ -369,19 +359,12 @@ export class GameScene extends Phaser.Scene {
         this.updateUI();
     }
 
-    hitGrounder(bullet, attacker) {
-        bullet.destroy();
-        attacker.destroy();
-        this.score += 30;
-        this.updateUI();
-    }
 
-    bombHitGround(bomb) {
+    bombHitGround(ground, bomb) {
         // explode + base damage if close
-        this.explode(bomb.x, bomb.y, 20);
+        this.explode(bomb.x, bomb.y, 120, 160, 0);
         const x = bomb.x;
         bomb.destroy();
-
         const dist = Math.abs(x - this.baseX);
         if (dist < 160) {
             const dmg = (dist < 80) ? 2 : 1;
@@ -396,7 +379,7 @@ export class GameScene extends Phaser.Scene {
 
         const t = chute.trooper;
         chute.destroy();
-        this.explode(chute.x, chute.y, 10);
+        this.explode(chute.x, chute.y, 10, 120, 120);
 
         if (t && t.active) {
             t.deployed = false;
@@ -411,35 +394,43 @@ export class GameScene extends Phaser.Scene {
     }
 
     // ---------- landed -> wait -> attack at 10 ----------
-    explode(x, y, size) {
+    explode(x, y, particleCount, xv, yv) {
         // Cheap particle-ish burst
-        for (let i = 0; i < size; i++) {
+        for (let i = 0; i < particleCount; i++) {
             const keys = Object.keys(PAL);
             const randomIndex = Phaser.Math.Between(0, keys.length - 1);
+            const randomSize1 = Phaser.Math.Between(2, 10);
+            const randomSize2 = Phaser.Math.Between(2, 10);
             const color = PAL[keys[randomIndex]];
-            const p = this.add.rectangle(x, y, 4, 4, color).setAlpha(0.95);
+            const p = this.add.rectangle(x, y, randomSize1, randomSize2, color).setAlpha(0.95);
             this.physics.add.existing(p);
             this.particles.add(p);
             p.body.setAllowGravity(true);
-            p.body.setVelocity(Phaser.Math.Between(-120, 120), Phaser.Math.Between(-130, 160));
-            p.body.setGravityY(200);
+            p.body.setVelocity(Phaser.Math.Between(-xv, xv), Phaser.Math.Between(-yv, yv));
+            p.body.setGravityY(randomSize1 * randomSize2 * 8);
             p.body.setBounce(0.45);
             p.body.setCollideWorldBounds(true);
             this.time.delayedCall(950 + i * 20, () => p.destroy());
         }
     }
+
     trooperLanded(ground, trooper) {
-        trooper.chute.destroy();
-        trooper.setVelocity(0, 0);
-        this.landed++;
-        if (!this.attackInProgress && this.landed >= this.attackThreshold) {
+        const grounder = this.physics.add.sprite(trooper.x, trooper.y, 'paratrooper');
+        trooper.destroy();
+        this.physics.add.existing(grounder);
+        this.grounders.add(grounder);
+        grounder.setScale(3);
+
+
+        if (!this.attackInProgress && this.grounders.getChildren().length >= this.attackThreshold) {
+            this.attackInProgress = true;
             this.startAttackWave();
         }
 
         this.updateUI();
     }
     startAttackWave() {
-        this.attackInProgress = true;
+        //  this.attackInProgress = true;
 
         // convert exactly 10 landed markers into attackers
         //const batch = this.landed.splice(0, this.attackThreshold);
@@ -465,11 +456,12 @@ export class GameScene extends Phaser.Scene {
 
     updateUI() {
         const hpBar = "█".repeat(this.baseHP) + "░".repeat(this.baseHPMax - this.baseHP);
-        const waiting = this.landed;
+        const waiting = this.grounders.getChildren().length;
         const need = Math.max(0, this.attackThreshold - waiting);
         this.ui.setText(
-            `BASE  ${"█".repeat(this.baseHP)}\n` +
-            `LANDED ${waiting} / ${this.attackThreshold}  (${need} to attack)`
+            `BASE  ${hpBar}\n` +
+            `LANDED ${waiting} / ${this.attackThreshold}  (${need} to attack)\n` +
+            `SORTIE  ${this.level}\n`
         );
 
         const zeroPad = (num, places) => String(num).padStart(places, '0')

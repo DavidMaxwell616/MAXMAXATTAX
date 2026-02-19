@@ -23,6 +23,4 @@ Target          Points
     Bomb             25
 Helicopter       5
 Jet              5
-Paratrooper      2
-
-Do You Want Steerable Shells(Y / N) ? `
+Paratrooper      2`
