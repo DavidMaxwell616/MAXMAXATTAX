@@ -20,7 +20,7 @@ const PAL = {
 export class GameScene extends Phaser.Scene {
     constructor() { super("game"); }
     preload() {
-
+        this.load.font('fixedsys', 'assets/fonts/Fixedsys.ttf');
         this.load.spritesheet("helicopter", "assets/images/helicopter.png", {
             frameWidth: 30,
             frameHeight: 11
@@ -82,6 +82,13 @@ export class GameScene extends Phaser.Scene {
         this.physics.add.overlap(this.bullets, this.chutes, this.hitChute, null, this);
         this.physics.add.overlap(this.bullets, this.bombs, this.hitBomb, null, this);
         this.physics.add.overlap(this.bullets, this.grounders, this.hitGrounder, null, this);
+        this.physics.add.overlap(this.troopers, this.base, (object, trooper) => { trooper.destroy(); }, null, this);
+        this.physics.add.overlap(this.troopers, this.turret, (object, trooper) => { trooper.destroy(); }, null, this);
+        this.physics.add.overlap(this.grounders, this.base, (object, grounder) => {
+            grounder.destroy(); this.baseHP = Math.max(0, this.baseHP - 20);
+        }, null, this);
+        this.physics.add.overlap(this.particles, this.troopers, this.hitTroop, null, this);
+        this.physics.add.overlap(this.particles, this.chutes, this.hitChute, null, this);
 
         this.physics.add.overlap(this.troopers, this.ground, this.trooperLanded, null, this);
         this.physics.add.overlap(this.bombs, this.ground, this.bombHitGround, null, this);
@@ -95,6 +102,9 @@ export class GameScene extends Phaser.Scene {
         // UI
         this.level = 1;
         this.score = 0;
+        this.enemiesHit = 0;
+        this.choppersNeeded = 10;
+        this.bombersNeeded = 3;
         this.ui = this.add.text(12, 12, "", { font: "16px monospace", fill: "#dbe8ff" });
         this.ui2 = this.add.text(W / 2 - 50, H * .92, "", { font: "26px monospace", fill: "#dbe8ff" });
         this.nextFireTime = 0;
@@ -125,6 +135,7 @@ export class GameScene extends Phaser.Scene {
             frameRate: 18,
             repeat: -1
         });
+        this.showLevel();
         this.updateUI();
     }
 
@@ -150,6 +161,16 @@ export class GameScene extends Phaser.Scene {
             this.nextSpawn = time + this.spawnRate;
         }
 
+        if (this.attackInProgress) {
+            this.grounders.getChildren().forEach(grounder => {
+                if (grounder.x > this.base.x) {
+                    grounder.x--;
+                }
+                if (grounder.x < this.base.x) {
+                    grounder.x++;
+                }
+            });
+        }
         // cleanup
         this.bullets.children.iterate(b => { if (b && b.active && b.y > H + 60) b.destroy(); });
         this.air.children.iterate(a => { if (a && a.active && (a.x < -160 || a.x > W + 160)) a.destroy(); });
@@ -158,6 +179,9 @@ export class GameScene extends Phaser.Scene {
         this.particles.children.iterate(b => { if (b && b.y > this.groundY) b.destroy(); });
 
 
+        if (this.attackInProgress && this.grounders.getChildren().length === 0) {
+            this.gameOver();
+        }
         //if (this.attackInProgress && this.grounders.countActive(true) === 0) this.attackInProgress = false;
 
         this.chutes.children.iterate(ch => {
@@ -201,13 +225,15 @@ export class GameScene extends Phaser.Scene {
         const r = Math.random();
         const type = (r < 0.72) ? "heli" : "bomber";
         if (type === "heli") this.spawnHeli(time);
-        else this.spawnBomber(time);
+        else if (this.level > 3) {
+            this.spawnBomber(time);
+        }
     }
 
     spawnHeli(time) {
         const left = Math.random() < 0.5;
         const x = left ? -120 : W + 120;
-        const y = Phaser.Math.Between(90, 205);
+        const y = Phaser.Math.Between(90, 170);
 
         const heli = this.physics.add.sprite(x, y, 'helicopter');
         this.air.add(heli);
@@ -337,9 +363,29 @@ export class GameScene extends Phaser.Scene {
         craft.hp--;
         if (craft.hp <= 0) {
             craft.destroy();
+            this.enemiesHit++;
+            if (this.enemiesHit > this.choppersNeeded) {
+                this.levelUp();
+            }
             this.score += (craft.kind === "bomber") ? 220 : 140;
             this.updateUI();
         }
+    }
+    levelUp() {
+        this.level++;
+        this.enemiesHit = 0;
+        this.choppersNeeded += 5;
+        this.killEverything();
+    }
+
+    killEverything() {
+        this.bullets.children.iterate(b => { b.destroy(); });
+        //this.air.children.iterate(a => { a.destroy(); });
+        // this.troopers.children.iterate(t => {
+        //     t.destroy();
+        // });
+        // this.bombs?.children.iterate(b => { b.destroy(); });
+        // this.particles.children.iterate(b => { b.destroy(); });
     }
 
     hitTrooper(bullet, trooper) {
@@ -424,35 +470,24 @@ export class GameScene extends Phaser.Scene {
 
         if (!this.attackInProgress && this.grounders.getChildren().length >= this.attackThreshold) {
             this.attackInProgress = true;
-            this.startAttackWave();
         }
 
         this.updateUI();
     }
-    startAttackWave() {
-        //  this.attackInProgress = true;
 
-        // convert exactly 10 landed markers into attackers
-        //const batch = this.landed.splice(0, this.attackThreshold);
-
-        //     batch.forEach((entry) => {
-
-        //         const a = this.add.rectangle(entry.x, this.groundY - 10, 14, 14, PAL.MAGENTA).setAlpha(0.95);
-        //         this.physics.add.existing(a);
-        //         a.body.setAllowGravity(false);
-        //         a.body.setCollideWorldBounds(true);
-
-        //         // slight speed variance
-        //         a.speed = 22 + Phaser.Math.Between(-3, 3);
-
-        //         // small stagger so they don’t overlap perfectly
-        //         a.x += Phaser.Math.Between(-6, 6);
-
-        //         this.grounders.add(a);
-        //     });
+    showLevel() {
+        let levelText = this.add.text(W / 2, H / 3,
+            `  Sortie ${this.level}\n` +
+            `${this.choppersNeeded} Choppers`, {
+            fontFamily: 'Fixedsys',
+            fontSize: '40px',
+            fill: "#f88"
+        }).setOrigin(0.5);
+        this.time.delayedCall(2000, () => {
+            levelText.destroy();
+        }, [], this);
+        if (this.level > 1) this.scene.pause();
     }
-
-
 
     updateUI() {
         const hpBar = "█".repeat(this.baseHP) + "░".repeat(this.baseHPMax - this.baseHP);
@@ -470,7 +505,16 @@ export class GameScene extends Phaser.Scene {
     }
 
     gameOver() {
-        this.add.text(W / 2, H / 2, "GAME OVER", { font: "40px monospace", fill: "#f88" }).setOrigin(0.5);
-        this.scene.pause();
+        this.base.visible = this.turret.visible = this.barrel.visible = this.ui2.visible = false;
+        this.explode(this.base.x, this.base.y, 50, 220, -500);
+        let gameOverText = this.add.text(W / 2, H / 3, "GAME OVER", {
+            fontFamily: 'Fixedsys',
+            fontSize: '40px',
+            fill: "#f88"
+        }).setOrigin(0.5);
+        this.time.delayedCall(2000, () => {
+            gameOverText.destroy();
+        }, [], this);
+        this.killEverything();
     }
 }
