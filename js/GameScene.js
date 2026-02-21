@@ -81,11 +81,11 @@ export class GameScene extends Phaser.Scene {
         this.physics.add.overlap(this.bullets, this.troopers, this.hitTroop, null, this);
         this.physics.add.overlap(this.bullets, this.chutes, this.hitChute, null, this);
         this.physics.add.overlap(this.bullets, this.bombs, this.hitBomb, null, this);
-        this.physics.add.overlap(this.bullets, this.grounders, this.hitGrounder, null, this);
         this.physics.add.overlap(this.troopers, this.base, (object, trooper) => { trooper.destroy(); }, null, this);
         this.physics.add.overlap(this.troopers, this.turret, (object, trooper) => { trooper.destroy(); }, null, this);
         this.physics.add.overlap(this.grounders, this.base, (object, grounder) => {
-            grounder.destroy(); this.baseHP = Math.max(0, this.baseHP - 20);
+            grounder.destroy();
+            this.baseHP--;
         }, null, this);
         this.physics.add.overlap(this.particles, this.troopers, this.hitTroop, null, this);
         this.physics.add.overlap(this.particles, this.chutes, this.hitChute, null, this);
@@ -179,7 +179,7 @@ export class GameScene extends Phaser.Scene {
         this.particles.children.iterate(b => { if (b && b.y > this.groundY) b.destroy(); });
 
 
-        if (this.attackInProgress && this.grounders.getChildren().length === 0) {
+        if (this.attackInProgress && this.baseHP === 0) {
             this.gameOver();
         }
         //if (this.attackInProgress && this.grounders.countActive(true) === 0) this.attackInProgress = false;
@@ -197,10 +197,7 @@ export class GameScene extends Phaser.Scene {
 
     // ---------- firing ----------
     fire() {
-
-        if (this.score > 0) {
-            this.score--;
-        }
+        this.score = (this.score > 0) ? 0 : this.score;
 
         const ang = this.barrel.rotation;
         const x = this.barrel.x + Math.cos(ang) * 48;
@@ -421,22 +418,23 @@ export class GameScene extends Phaser.Scene {
         }
     }
     hitChute(bullet, chute) {
-        bullet.destroy();
+        this.hitTrooper(bullet, chute);
+        // bullet.destroy();
 
-        const t = chute.trooper;
-        chute.destroy();
-        this.explode(chute.x, chute.y, 10, 120, 120);
+        // const t = chute.trooper;
+        // chute.destroy();
+        // this.explode(chute.x, chute.y, 10, 120, 120);
 
-        if (t && t.active) {
-            t.deployed = false;
-            t.chute = null;
-            t.body.setGravityY(this.G);
-            t.body.setMaxVelocity(400, 520);
-            t.body.velocity.y = Math.max(t.body.velocity.y, 120);
-        }
+        // if (t && t.active) {
+        //     t.deployed = false;
+        //     t.chute = null;
+        //     t.body.setGravityY(this.G);
+        //     t.body.setMaxVelocity(400, 520);
+        //     t.body.velocity.y = Math.max(t.body.velocity.y, 120);
+        // }
 
-        this.score += 40;
-        this.updateUI();
+        // this.score += 40;
+        // this.updateUI();
     }
 
     // ---------- landed -> wait -> attack at 10 ----------
@@ -505,8 +503,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     gameOver() {
+        this.attackInProgress = false;
         this.base.visible = this.turret.visible = this.barrel.visible = this.ui2.visible = false;
-        this.explode(this.base.x, this.base.y, 50, 220, -500);
+        this.explode(this.base.x, this.base.y, 500, 220, -500);
         let gameOverText = this.add.text(W / 2, H / 3, "GAME OVER", {
             fontFamily: 'Fixedsys',
             fontSize: '40px',
